@@ -42,43 +42,6 @@ static const char* TRAINING_MOD_LOG           = "/TrainingModpack/training_modpa
 static const char* TRAINING_MOD_FRAME_ADV_LOG = "/TrainingModpack/training_modpack_frame_adv.log";
 static const char* TRAINING_MOD_CONF          = "/TrainingModpack/training_modpack_menu.conf";
 
-GuiMain::GuiMain()
-{
-	smInitialize();
-	pminfoInitialize();
-	pmbmInitialize();
-	smExit();
-
-	pmdmntGetProcessId(&pidSmash, 0x01006A800016E000);
-
-	Result rc = fsOpenSdCardFileSystem(&this->m_fs);
-	if(R_FAILED(rc)) return;
-
-	FsFile menuFile;
-	rc = fsFsOpenFile(&this->m_fs, TRAINING_MOD_CONF, FsOpenMode_Read, &menuFile);
-	if(R_FAILED(rc)) return;
-
-	u64 bytesRead;
-	rc = fsFileRead(&menuFile, 0, static_cast<void*>(&menu), sizeof(menu), FsReadOption_None, &bytesRead);
-	if(R_FAILED(rc))
-	{
-		fsFileWrite(&menuFile, 0, static_cast<void*>(&menu), sizeof(menu), FsOpenMode_Write);
-	}
-
-	fsFileClose(&menuFile);
-}
-
-GuiMain::~GuiMain()
-{
-	// apply changes on exit
-	applyChanges();
-
-	smInitialize();
-	pminfoExit();
-	pmbmExit();
-	smExit();
-}
-
 static char FrameAdvantage[672];
 
 class FrameAdvantageOverlayFrame : public tsl::elm::OverlayFrame
@@ -132,6 +95,46 @@ public:
 
 		this->rootFrame = rootFrame;
 
+		Result rc;
+		Handle debug;
+
+		if(pidSmash != 0)
+		{
+			rc = svcDebugActiveProcess(&debug, pidSmash);
+			if(R_SUCCEEDED(rc))
+			{
+				FsFile frameAdvAddrFile;
+				rc = fsFsOpenFile(&this->m_fs, TRAINING_MOD_FRAME_ADV_LOG, FsOpenMode_Read, &frameAdvAddrFile);
+				if(R_FAILED(rc))
+				{
+					snprintf(FrameAdvantage, sizeof FrameAdvantage, "Failed to open file with error %d", rc);
+					rootFrame->setTitle(FrameAdvantage);
+					svcCloseHandle(debug);
+					return rootFrame;
+				}
+
+				char buffer[100];
+				u64  bytesRead;
+				rc = fsFileRead(&frameAdvAddrFile, 0, buffer, 100, FsReadOption_None, &bytesRead);
+				if(R_FAILED(rc))
+				{
+					snprintf(FrameAdvantage, sizeof FrameAdvantage, "Failed to read file with error %d", rc);
+					rootFrame->setTitle(FrameAdvantage);
+					svcCloseHandle(debug);
+					return rootFrame;
+				}
+
+				fsFileClose(&frameAdvAddrFile);
+				buffer[bytesRead]    = '\0';
+				this->frame_adv_addr = strtoul(buffer, NULL, 16);
+			}
+		}
+		else
+		{
+			snprintf(FrameAdvantage, sizeof FrameAdvantage, "Smash is not running.");
+			rootFrame->setTitle(FrameAdvantage);
+		}
+
 		return rootFrame;
 	}
 
@@ -149,46 +152,15 @@ public:
 			rc = svcDebugActiveProcess(&debug, pidSmash);
 			if(R_SUCCEEDED(rc))
 			{
-				u64    frame_adv_addr = 0;
-				FsFile menuAddrFile;
-				rc = fsFsOpenFile(&this->m_fs, TRAINING_MOD_FRAME_ADV_LOG, FsOpenMode_Read, &menuAddrFile);
-				if(R_FAILED(rc))
+				if(this->frame_adv_addr != 0)
 				{
-					snprintf(FrameAdvantage, sizeof FrameAdvantage, "Failed to open file with error %d", rc);
-					rootFrame->setTitle(FrameAdvantage);
-					svcCloseHandle(debug);
-					return;
-				}
-
-				char buffer[100];
-				u64  bytesRead;
-				rc = fsFileRead(&menuAddrFile, 0, buffer, 100, FsReadOption_None, &bytesRead);
-				if(R_FAILED(rc))
-				{
-					snprintf(FrameAdvantage, sizeof FrameAdvantage, "Failed to read file with error %d", rc);
-					rootFrame->setTitle(FrameAdvantage);
-					svcCloseHandle(debug);
-					return;
-				}
-
-				fsFileClose(&menuAddrFile);
-				buffer[bytesRead] = '\0';
-				frame_adv_addr    = strtoul(buffer, NULL, 16);
-
-				if(frame_adv_addr != 0)
-				{
-					rc = svcReadDebugProcessMemory(&FRAME_ADVANTAGE, debug, frame_adv_addr, sizeof(int));
+					rc = svcReadDebugProcessMemory(&FRAME_ADVANTAGE, debug, this->frame_adv_addr, sizeof(int));
 					snprintf(FrameAdvantage, sizeof FrameAdvantage, "Frame Advantage: %d", FRAME_ADVANTAGE);
 					rootFrame->setTitle(FrameAdvantage);
 				}
 
 				svcCloseHandle(debug);
 			}
-		}
-		else
-		{
-			snprintf(FrameAdvantage, sizeof FrameAdvantage, "Smash is not running.");
-			rootFrame->setTitle(FrameAdvantage);
 		}
 	}
 	virtual bool handleInput(u64              keysDown,
@@ -217,6 +189,7 @@ public:
 
 	FrameAdvantageOverlayFrame* rootFrame;
 	FsFileSystem                m_fs;
+	u64                         frame_adv_addr = 0;
 };
 
 namespace
@@ -266,6 +239,40 @@ tsl::elm::ListItem* createBitFlagOption(T* option, const std::string& name, cons
 	return item;
 }
 } // namespace
+
+GuiMain::GuiMain()
+{
+	smInitialize();
+	pminfoInitialize();
+	pmbmInitialize();
+	smExit();
+
+	pmdmntGetProcessId(&pidSmash, 0x01006A800016E000);
+
+	Result rc = fsOpenSdCardFileSystem(&this->m_fs);
+	if(R_FAILED(rc)) return;
+
+	FsFile menuFile;
+	rc = fsFsOpenFile(&this->m_fs, TRAINING_MOD_CONF, FsOpenMode_Read, &menuFile);
+	if(R_FAILED(rc)) return;
+
+	u64 bytesRead;
+	rc = fsFileRead(&menuFile, 0, static_cast<void*>(&menu), sizeof(menu), FsReadOption_None, &bytesRead);
+	if(R_FAILED(rc))
+	{
+		fsFileWrite(&menuFile, 0, static_cast<void*>(&menu), sizeof(menu), FsOpenMode_Write);
+	}
+
+	fsFileClose(&menuFile);
+}
+
+GuiMain::~GuiMain()
+{
+	smInitialize();
+	pminfoExit();
+	pmbmExit();
+	smExit();
+}
 
 tsl::elm::Element* GuiMain::createUI()
 {
@@ -417,6 +424,27 @@ tsl::elm::Element* GuiMain::createUI()
 			list->addItem(resetMenuItem);
 
 			rootFrame->setContent(list);
+
+			FsFile menuAddrFile;
+			rc = fsFsOpenFile(&this->m_fs, TRAINING_MOD_LOG, FsOpenMode_Read, &menuAddrFile);
+			if(R_FAILED(rc))
+			{
+				svcCloseHandle(debug);
+				return rootFrame;
+			}
+
+			char buffer[100];
+			u64  bytesRead;
+			rc = fsFileRead(&menuAddrFile, 0, buffer, 100, FsReadOption_None, &bytesRead);
+			if(R_FAILED(rc))
+			{
+				svcCloseHandle(debug);
+				return rootFrame;
+			}
+
+			fsFileClose(&menuAddrFile);
+			buffer[bytesRead] = '\0';
+			this->menu_addr   = strtoul(buffer, NULL, 16);
 		}
 		else
 		{
@@ -446,13 +474,8 @@ void GuiMain::update()
 {
 	static u32 counter = 0;
 
-	if(counter++ % 15 != 0) return;
+	if(counter++ % 5 != 0) return;
 
-	applyChanges();
-}
-
-void GuiMain::applyChanges()
-{
 	for(ValueListItem* item : valueListItems)
 	{
 		item->applyChanges();
@@ -465,35 +488,16 @@ void GuiMain::applyChanges()
 		rc = svcDebugActiveProcess(&debug, pidSmash);
 		if(R_SUCCEEDED(rc))
 		{
-			u64    menu_addr = 0;
-			FsFile menuAddrFile;
-			rc = fsFsOpenFile(&this->m_fs, TRAINING_MOD_LOG, FsOpenMode_Read, &menuAddrFile);
-			if(R_FAILED(rc))
+			if(this->menu_addr != 0)
 			{
-				svcCloseHandle(debug);
-				return;
-			}
-
-			char buffer[100];
-			u64  bytesRead;
-			rc = fsFileRead(&menuAddrFile, 0, buffer, 100, FsReadOption_None, &bytesRead);
-			if(R_FAILED(rc))
-			{
-				svcCloseHandle(debug);
-				return;
-			}
-
-			fsFileClose(&menuAddrFile);
-			buffer[bytesRead] = '\0';
-			menu_addr         = strtoul(buffer, NULL, 16);
-
-			if(menu_addr != 0)
-			{
-				rc = svcWriteDebugProcessMemory(debug, &menu, (u64)menu_addr, sizeof(menu));
+				rc = svcWriteDebugProcessMemory(debug, &menu, this->menu_addr, sizeof(menu));
 			}
 			svcCloseHandle(debug);
 		}
 	}
+
+	// No need to set the config as often.
+	if(counter % 15 != 0) return;
 
 	FsFile menuFile;
 	fsFsCreateFile(&this->m_fs, TRAINING_MOD_CONF, sizeof(menu), 0);

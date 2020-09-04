@@ -10,6 +10,7 @@ private:
 	FsFileSystem                m_fs;
 	tsl::elm::ToggleListItem*   toggleItem = nullptr;
 	std::vector<ValueListItem*> valueListItems;
+	u64                         menu_addr = 0;
 
 public:
 	GuiMain();
@@ -17,5 +18,4 @@ public:
 
 	virtual tsl::elm::Element* createUI();
 	virtual void               update() override;
-	void                       applyChanges();
 };
