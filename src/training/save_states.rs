@@ -77,9 +77,8 @@ pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor)
         save_state = &mut SAVE_STATE_PLAYER;
     }
 
-    // Grab + Dpad up: reset state
-    if ControlModule::check_button_on(module_accessor, *CONTROL_PAD_BUTTON_CATCH)
-        && ControlModule::check_button_trigger(module_accessor, *CONTROL_PAD_BUTTON_APPEAL_HI)
+    // Dpad up: reset state
+    if ControlModule::check_button_trigger(module_accessor, *CONTROL_PAD_BUTTON_APPEAL_HI)
     {
         if save_state.state == NoAction {
             SAVE_STATE_PLAYER.state = KillPlayer;
@@ -186,9 +185,8 @@ pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor)
         return;
     }
 
-    // Grab + Dpad down: Save state
-    if ControlModule::check_button_on(module_accessor, *CONTROL_PAD_BUTTON_CATCH)
-        && ControlModule::check_button_trigger(module_accessor, *CONTROL_PAD_BUTTON_APPEAL_LW)
+    // Dpad down: Save state
+    if ControlModule::check_button_trigger(module_accessor, *CONTROL_PAD_BUTTON_APPEAL_LW)
     {
         SAVE_STATE_PLAYER.state = Save;
         SAVE_STATE_CPU.state = Save;
